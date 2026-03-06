@@ -1,0 +1,4 @@
+(library
+ (name camldn)
+ (public_name camldn)
+ (libraries sqlite3 uri))

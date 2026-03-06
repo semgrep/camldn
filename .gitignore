@@ -1,0 +1,6 @@
+_build/
+.devenv/
+.direnv/
+devenv.local.nix
+.devenv.flake.nix
+*.install
