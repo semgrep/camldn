@@ -26,3 +26,13 @@
    (ocamlformat :with-dev-setup)
    (ocamlmerlin-mlx :with-dev-setup)
 ))
+
+(package
+ (name ppx_camldn)
+ (synopsis "PPX for automatic caching via camldn")
+ (depends
+  (ocaml (>= 5.3))
+  dune
+  (ppxlib (>= 0.35.0))
+  (camldn :with-test)
+  (testo :with-test)))

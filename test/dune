@@ -1,3 +1,8 @@
 (test
  (name test_camldn)
  (libraries camldn testo))
+
+(test
+ (name test_ppx_camldn)
+ (libraries camldn testo)
+ (preprocess (pps ppx_camldn)))

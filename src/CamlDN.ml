@@ -169,7 +169,6 @@ let with_handlers t f =
 module type CacheType = sig
   type param
   type value
-  val name : string
   val key_of_param : param -> string
   val bytes_of_value : value -> bytes
   val value_of_bytes : bytes -> value
@@ -178,40 +177,37 @@ end
 module type Cache = sig
   type param
   type value
-  val maybe_do : f_name:string -> f:(param -> value) -> param -> value
+  val maybe_do : cache_name:string -> f:(param -> value) -> param -> value
 end
 
 (* Shared memoization core — both Make and MakeMarshal delegate here.
    [to_bytes] and [of_bytes] are the only things that differ between the
    two functors, so we parameterize over them. *)
-let maybe_do_generic ~name ~key_of_param ~to_bytes ~of_bytes ~f_name ~f param =
-  (* The null byte separator ensures "foo" + "bar" and "fo" + "obar"
-     produce distinct composite keys. *)
-  let key = f_name ^ "\x00" ^ key_of_param param in
-  Effect.perform (CacheEnsureTable name);
-  match Effect.perform (CacheGet (name, key)) with
+let maybe_do_generic ~key_of_param ~to_bytes ~of_bytes ~cache_name ~f param =
+  let key = key_of_param param in
+  Effect.perform (CacheEnsureTable cache_name);
+  match Effect.perform (CacheGet (cache_name, key)) with
   | Some bytes -> of_bytes bytes
   | None ->
     let result = f param in
     let bytes = to_bytes result in
-    Effect.perform (CacheSet (name, key, bytes));
+    Effect.perform (CacheSet (cache_name, key, bytes));
     result
 
 module Make (C : CacheType) : Cache with type param = C.param and type value = C.value = struct
   type param = C.param
   type value = C.value
 
-  let maybe_do ~f_name ~f param =
+  let maybe_do ~cache_name ~f param =
     maybe_do_generic
-      ~name:C.name ~key_of_param:C.key_of_param
+      ~key_of_param:C.key_of_param
       ~to_bytes:C.bytes_of_value ~of_bytes:C.value_of_bytes
-      ~f_name ~f param
+      ~cache_name ~f param
 end
 
 module MakeMarshal (C : sig
   type param
   type value
-  val name : string
   val key_of_param : param -> string
   val closures : bool
 end) : Cache with type param = C.param and type value = C.value = struct
@@ -220,10 +216,10 @@ end) : Cache with type param = C.param and type value = C.value = struct
 
   let marshal_flags = if C.closures then [Marshal.Closures] else []
 
-  let maybe_do ~f_name ~f param =
+  let maybe_do ~cache_name ~f param =
     maybe_do_generic
-      ~name:C.name ~key_of_param:C.key_of_param
+      ~key_of_param:C.key_of_param
       ~to_bytes:(fun v -> Marshal.to_bytes (v : C.value) marshal_flags)
       ~of_bytes:(fun b -> (Marshal.from_bytes b 0 : C.value))
-      ~f_name ~f param
+      ~cache_name ~f param
 end

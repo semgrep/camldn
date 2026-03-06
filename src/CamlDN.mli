@@ -25,16 +25,13 @@ val with_handlers : t -> (t -> 'a) -> 'a
 
 
 
-(** Define the name of the cache and how to calculate the cache key, and serialize/deserialize the underlying type *)
+(** Define how to calculate the cache key, and serialize/deserialize the underlying type *)
 module type CacheType = sig
   (** the parameter to cache by *)
   type param
 
   (** the resulting value  *)
   type value
-
-  (** name of the cache kind, to be used as the sqlite table name*)
-  val name : string
 
   (** convert the param into the string to check for it in the db *)
   val key_of_param : param -> string
@@ -53,12 +50,14 @@ module type Cache = sig
     (** Same as [CacheType.value]*)
   type value
 
-  val maybe_do : f_name:string -> f:(param -> value) -> param -> value
-  (** [maybe_do ~f_name ~f x] checks if the result of [f x], indicated by
-      [f_name, CacheType.key_of_param x], is in the cache. It does this by
-      performing an effect. If so, it returns the cached value. Otherwise, it
-      computes [f x], stores it in the cache through an effect, and returns the
-      result. It will also create the underlying sqlite3 table if necessary. *)
+  val maybe_do : cache_name:string -> f:(param -> value) -> param -> value
+  (** [maybe_do ~cache_name ~f x] checks if the result of [f x], indicated by
+      [cache_name, CacheType.key_of_param x], is in the cache. It does this by
+      performing an effect. [cache_name] is used as both the sqlite table name
+      and part of the composite cache key. If the value is found, it returns the
+      cached value. Otherwise, it computes [f x], stores it in the cache through
+      an effect, and returns the result. It will also create the underlying
+      sqlite3 table if necessary. *)
 end
 
 module Make (C : CacheType) : Cache with type param = C.param and type value = C.value
@@ -66,7 +65,6 @@ module Make (C : CacheType) : Cache with type param = C.param and type value = C
 module MakeMarshal (C : sig
   type param
   type value
-  val name : string
   val key_of_param : param -> string
   val closures : bool
 end) : Cache with type param = C.param and type value = C.value

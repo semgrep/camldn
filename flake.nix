@@ -26,6 +26,7 @@
           ocaml-lsp-server = "*";
           ocamlformat = "*";
           testo = "*";
+          ppxlib = "0.35.0";
         };
         query = devPackagesQuery // {
           ocaml-base-compiler = "5.3.0";
