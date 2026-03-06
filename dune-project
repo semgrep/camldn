@@ -21,7 +21,7 @@
   dune
   (sqlite3 (>= 5.1.0))
   (uri (>= 4.0.0))
-
+  (testo :with-test)
    (ocaml-lsp-server :with-dev-setup)
    (ocamlformat :with-dev-setup)
    (ocamlmerlin-mlx :with-dev-setup)

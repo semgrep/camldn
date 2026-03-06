@@ -1,6 +1,0 @@
-inputs:
-  opam-nix:
-    url: github:tweag/opam-nix
-  opam-repository:
-    url: github:ocaml/opam-repository
-    flake: false

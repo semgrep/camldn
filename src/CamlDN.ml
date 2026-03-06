@@ -1,3 +1,6 @@
+exception Sqlite_error of { rc : string; sql : string }
+exception Unsupported_scheme of string
+
 (* Internal effects — not exposed in the .mli *)
 type _ Effect.t +=
   | CacheEnsureTable : string -> unit Effect.t
@@ -16,13 +19,18 @@ type t = {
 
 let get_conn t = Domain.DLS.get t.conn_key
 
+(* sqlite3 identifiers (table names etc.) can't be parameterized with ?,
+   so we quote them manually. Double-quoting is the SQL standard way to
+   escape identifiers: any embedded double-quote is doubled. *)
 let escape_ident s =
   "\"" ^ String.concat "\"\"" (String.split_on_char '"' s) ^ "\""
 
+(* sqlite3-ocaml's [exec] returns an Rc.t rather than raising, so we have
+   to check the return code ourselves. *)
 let exec_sql db sql =
   match Sqlite3.exec db sql with
   | Sqlite3.Rc.OK -> ()
-  | rc -> failwith ("SQLite error: " ^ Sqlite3.Rc.to_string rc ^ " on: " ^ sql)
+  | rc -> raise (Sqlite_error { rc = Sqlite3.Rc.to_string rc; sql })
 
 let ensure_table t name =
   Mutex.lock t.table_mutex;
@@ -42,11 +50,19 @@ let cache_get t table key =
   let sql =
     "SELECT value FROM " ^ escape_ident table ^ " WHERE key = ?"
   in
+  (* sqlite3-ocaml prepared statements are not reusable across bindings
+     without a reset, so we create+finalize each time. The sqlite3 engine
+     caches the compiled bytecode internally anyway. *)
   let stmt = Sqlite3.prepare db sql in
   Fun.protect ~finally:(fun () -> ignore (Sqlite3.finalize stmt)) (fun () ->
+    (* bind_text/bind_blob return Rc.t — OK on success. We ignore because
+       a bind failure will just surface as a step failure below. *)
     ignore (Sqlite3.bind_text stmt 1 key);
     match Sqlite3.step stmt with
     | Sqlite3.Rc.ROW ->
+      (* sqlite3-ocaml returns BLOB columns as Data.BLOB, but if the value
+         was inserted via bind_text it may come back as Data.TEXT. We accept
+         both so round-tripping works regardless of affinity. *)
       (match Sqlite3.column stmt 0 with
        | Sqlite3.Data.BLOB b -> Some (Bytes.of_string b)
        | Sqlite3.Data.TEXT s -> Some (Bytes.of_string s)
@@ -55,6 +71,8 @@ let cache_get t table key =
 
 let cache_set t table key value =
   let db = get_conn t in
+  (* INSERT OR REPLACE is sqlite-specific syntax — it does an upsert keyed
+     on the PRIMARY KEY, so repeat sets for the same key just overwrite. *)
   let sql =
     "INSERT OR REPLACE INTO " ^ escape_ident table
     ^ " (key, value) VALUES (?, ?)"
@@ -62,10 +80,13 @@ let cache_set t table key value =
   let stmt = Sqlite3.prepare db sql in
   Fun.protect ~finally:(fun () -> ignore (Sqlite3.finalize stmt)) (fun () ->
     ignore (Sqlite3.bind_text stmt 1 key);
+    (* bind_blob takes a string (not bytes) because sqlite3-ocaml predates
+       the bytes/string split — so we must Bytes.to_string here. *)
     ignore (Sqlite3.bind_blob stmt 2 (Bytes.to_string value));
     match Sqlite3.step stmt with
     | Sqlite3.Rc.DONE -> ()
-    | rc -> failwith ("SQLite insert error: " ^ Sqlite3.Rc.to_string rc))
+    | rc ->
+      raise (Sqlite_error { rc = Sqlite3.Rc.to_string rc; sql }))
 
 (* --- Connection lifecycle --- *)
 
@@ -76,19 +97,25 @@ let open_cdn ?(in_memory = false) uri =
       match Uri.scheme uri with
       | Some "file" -> Uri.path uri
       | None -> Uri.path uri
-      | Some s -> failwith ("Unsupported URI scheme: " ^ s)
+      | Some s -> raise (Unsupported_scheme s)
   in
   let all_conns = Atomic.make [] in
   let conn_key =
     Domain.DLS.new_key (fun () ->
+      (* ~mutex:`NO tells sqlite3 we handle our own locking.
+         Each Domain gets its own connection via DLS so there is no
+         cross-thread sharing of a single db handle. *)
       let db = Sqlite3.db_open ~mutex:`NO path in
-      (* Atomically prepend to connection list *)
+      (* CAS loop to atomically prepend to the connection list so
+         close_cdn can find and close every connection later. *)
       let rec add_conn () =
         let old = Atomic.get all_conns in
         if not (Atomic.compare_and_set all_conns old (db :: old))
         then add_conn ()
       in
       add_conn ();
+      (* WAL (write-ahead logging) lets readers and writers proceed
+         concurrently — important since each Domain has its own conn. *)
       exec_sql db "PRAGMA journal_mode=WAL";
       db)
   in
@@ -101,6 +128,9 @@ let open_cdn ?(in_memory = false) uri =
   }
 
 let close_cdn t =
+  (* CAS-swap the conn list to [] and close everything we took.
+     db_close returns bool (false = busy) — we ignore it because
+     sqlite3-ocaml will finalize remaining stmts on GC anyway. *)
   let rec swap () =
     let old = Atomic.get t.all_conns in
     if not (Atomic.compare_and_set t.all_conns old [])
@@ -151,20 +181,31 @@ module type Cache = sig
   val maybe_do : f_name:string -> f:(param -> value) -> param -> value
 end
 
+(* Shared memoization core — both Make and MakeMarshal delegate here.
+   [to_bytes] and [of_bytes] are the only things that differ between the
+   two functors, so we parameterize over them. *)
+let maybe_do_generic ~name ~key_of_param ~to_bytes ~of_bytes ~f_name ~f param =
+  (* The null byte separator ensures "foo" + "bar" and "fo" + "obar"
+     produce distinct composite keys. *)
+  let key = f_name ^ "\x00" ^ key_of_param param in
+  Effect.perform (CacheEnsureTable name);
+  match Effect.perform (CacheGet (name, key)) with
+  | Some bytes -> of_bytes bytes
+  | None ->
+    let result = f param in
+    let bytes = to_bytes result in
+    Effect.perform (CacheSet (name, key, bytes));
+    result
+
 module Make (C : CacheType) : Cache with type param = C.param and type value = C.value = struct
   type param = C.param
   type value = C.value
 
   let maybe_do ~f_name ~f param =
-    let key = f_name ^ "\x00" ^ C.key_of_param param in
-    Effect.perform (CacheEnsureTable C.name);
-    match Effect.perform (CacheGet (C.name, key)) with
-    | Some bytes -> C.value_of_bytes bytes
-    | None ->
-      let result = f param in
-      let bytes = C.bytes_of_value result in
-      Effect.perform (CacheSet (C.name, key, bytes));
-      result
+    maybe_do_generic
+      ~name:C.name ~key_of_param:C.key_of_param
+      ~to_bytes:C.bytes_of_value ~of_bytes:C.value_of_bytes
+      ~f_name ~f param
 end
 
 module MakeMarshal (C : sig
@@ -177,16 +218,12 @@ end) : Cache with type param = C.param and type value = C.value = struct
   type param = C.param
   type value = C.value
 
-  let marshal_flags c = if c then [Marshal.Closures] else []
+  let marshal_flags = if C.closures then [Marshal.Closures] else []
 
   let maybe_do ~f_name ~f param =
-    let key = f_name ^ "\x00" ^ C.key_of_param param in
-    Effect.perform (CacheEnsureTable C.name);
-    match Effect.perform (CacheGet (C.name, key)) with
-    | Some bytes -> (Marshal.from_bytes bytes 0 : C.value)
-    | None ->
-      let result = f param in
-      let bytes = Marshal.to_bytes (result : C.value) (marshal_flags C.closures) in
-      Effect.perform (CacheSet (C.name, key, bytes));
-      result
+    maybe_do_generic
+      ~name:C.name ~key_of_param:C.key_of_param
+      ~to_bytes:(fun v -> Marshal.to_bytes (v : C.value) marshal_flags)
+      ~of_bytes:(fun b -> (Marshal.from_bytes b 0 : C.value))
+      ~f_name ~f param
 end

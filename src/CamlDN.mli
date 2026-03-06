@@ -1,3 +1,10 @@
+exception Sqlite_error of { rc : string; sql : string }
+(** Raised when an underlying SQLite operation returns a non-OK result code.
+    [rc] is the human-readable return code and [sql] is the statement that failed. *)
+
+exception Unsupported_scheme of string
+(** Raised by {!open_cdn} when the URI has a scheme other than ["file"] (or no scheme). *)
+
 (** Stores the DB connection info. Has a pool of connections, specifically one for each domain *)
 type t
 
