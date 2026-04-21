@@ -11,6 +11,8 @@ depends: [
   "dune" {>= "3.0"}
   "sqlite3" {>= "5.1.0"}
   "uri" {>= "4.0.0"}
+  "bin_prot" {>= "v0.17.0"}
+  "digestif" {>= "1.2.0"}
   "testo" {with-test}
   "ocaml-lsp-server" {with-dev-setup}
   "ocamlformat" {with-dev-setup}

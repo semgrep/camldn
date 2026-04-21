@@ -21,6 +21,8 @@
   dune
   (sqlite3 (>= 5.1.0))
   (uri (>= 4.0.0))
+  (bin_prot (>= "v0.17.0"))
+  (digestif (>= "1.2.0"))
   (testo :with-test)
    (ocaml-lsp-server :with-dev-setup)
    (ocamlformat :with-dev-setup)
@@ -30,9 +32,11 @@
 (package
  (name ppx_camldn)
  (synopsis "PPX for automatic caching via camldn")
+ (allow_empty)
  (depends
   (ocaml (>= 5.3))
   dune
   (ppxlib (>= 0.35.0))
+  (ppx_deriving (>= "5.2.1"))
   (camldn :with-test)
   (testo :with-test)))

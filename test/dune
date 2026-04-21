@@ -1,0 +1,4 @@
+(tests
+ (names test_camldn test_ppx_camldn)
+ (libraries camldn testo sqlite3 uri)
+ (preprocess (pps ppx_camldn)))
