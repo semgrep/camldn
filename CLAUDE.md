@@ -112,6 +112,12 @@ Content-addressing is inherently a pure-value DAG model, so:
   two refs in your source data point at the same cell, they collapse to one
   blob on write but come back as two independent cells on read. Same for
   mutable record fields under any future deriver.
+- **`'a lazy_t`** is supported via `SerDe.lazy_` and `[@@deriving camldn]`
+  (matches both `'a lazy_t` and `'a Lazy.t` spellings). The lazy is **forced
+  at store time** and stored as its resulting value; `load` hands back an
+  already-forced lazy (`Lazy.from_val`). Side effects in the thunk run during
+  `store`; exceptions from the thunk escape. Laziness is not preserved across
+  the round-trip. Same design as `Bin_prot.Std.bin_lazy_t`.
 - **Sharing by value** (distinct-but-equal subtrees) *is* preserved: content-
   addressing collapses them automatically. This is stronger than `Marshal`'s
   by-identity sharing for cross-run dedup, but weaker than `Marshal` on

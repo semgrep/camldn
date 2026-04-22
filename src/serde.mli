@@ -38,6 +38,19 @@ val ref : 'a t -> 'a ref t
     [load] returns two independent fresh refs. Later mutation through one will
     not be visible through the other. *)
 
+val lazy_ : 'a t -> 'a Lazy.t t
+(** Serialize a lazy value by {b forcing it at store time} and storing the
+    result. [load] returns a [Lazy.from_val]-style already-forced lazy.
+
+    Caveats:
+    - Any side effects in the thunk run during [store], not during [load].
+    - If the thunk raises, the exception escapes [store].
+    - Laziness is not preserved across the round-trip; the returned lazy is
+      always already forced.
+    - Sharing of the underlying thunk by physical identity is not preserved
+      (value-level sharing via content-addressing still collapses equal
+      forced results). *)
+
 (** {1 Escape hatch and merkle primitives} *)
 
 val of_bin_prot : 'a Bin_prot.Type_class.t -> 'a t

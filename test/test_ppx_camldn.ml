@@ -204,6 +204,26 @@ type outer = { first : inner; second : inner } [@@deriving camldn]
 
 type counter = { label : string; count : int ref } [@@deriving camldn]
 
+type boxed = { name : string; value : int lazy_t } [@@deriving camldn]
+
+let test_ppx_lazy_field =
+  Testo.create "ppx.record_with_lazy_field" (fun () ->
+    with_in_memory (fun () ->
+      let force_count = ref 0 in
+      let b = { name = "box"; value = lazy (incr force_count; 42) } in
+      if !force_count <> 0 then Testo.fail "forced too early";
+      let sha = serde_boxed.store b in
+      if !force_count <> 1 then
+        Testo.fail
+          (Printf.sprintf "expected 1 force during store, got %d" !force_count);
+      let b' = serde_boxed.load sha in
+      if b'.name <> "box" then Testo.fail "name lost";
+      if not (Lazy.is_val b'.value) then
+        Testo.fail "loaded lazy field not pre-forced";
+      if Lazy.force b'.value <> 42 then Testo.fail "wrong value";
+      if !force_count <> 1 then
+        Testo.fail "loading re-ran the thunk"))
+
 let test_ppx_ref_field =
   Testo.create "ppx.record_with_ref_field" (fun () ->
     with_in_memory (fun () ->
@@ -250,6 +270,7 @@ let tests =
   ; test_memo_attr_style
   ; test_ppx_record_structural_sharing
   ; test_ppx_ref_field
+  ; test_ppx_lazy_field
   ]
 
 let () = Testo.interpret_argv ~project_name:"ppx_camldn" (fun _env -> tests)

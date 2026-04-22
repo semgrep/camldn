@@ -207,6 +207,26 @@ let test_serde_result =
        | Error "nope" -> ()
        | _ -> Testo.fail "expected Error nope")))
 
+let test_serde_lazy =
+  Testo.create "serde.lazy_forces_at_store_time" (fun () ->
+    with_in_memory (fun _ ->
+      let serde = SerDe.lazy_ SerDe.int in
+      let force_count = ref 0 in
+      let lz = lazy (incr force_count; 17) in
+      if !force_count <> 0 then Testo.fail "lazy forced before store";
+      let sha = serde.store lz in
+      if !force_count <> 1 then
+        Testo.fail
+          (Printf.sprintf "expected thunk to run once at store, got %d"
+             !force_count);
+      let lz' = serde.load sha in
+      (* Loaded lazy should be already forced. *)
+      if not (Lazy.is_val lz') then Testo.fail "loaded lazy is not pre-forced";
+      if Lazy.force lz' <> 17 then Testo.fail "wrong forced value";
+      (* Force again: no additional side effect on source. *)
+      if !force_count <> 1 then
+        Testo.fail "loading re-ran the thunk"))
+
 let test_serde_ref =
   Testo.create "serde.ref_round_trip_no_aliasing" (fun () ->
     with_in_memory (fun _ ->
@@ -351,6 +371,7 @@ let tests =
   ; test_serde_list
   ; test_serde_option
   ; test_serde_result
+  ; test_serde_lazy
   ; test_serde_ref
   ; test_serde_pair
   ; test_cache_round_trip

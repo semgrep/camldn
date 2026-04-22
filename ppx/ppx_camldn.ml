@@ -35,6 +35,9 @@ let rec serde_of_core_type ct =
                [%e serde_of_core_type b]]
   | Ptyp_constr ({ txt = Lident "ref"; _ }, [a]) ->
       [%expr [%e serde_path ~loc "ref"] [%e serde_of_core_type a]]
+  | Ptyp_constr ({ txt = Lident "lazy_t"; _ }, [a])
+  | Ptyp_constr ({ txt = Ldot (Lident "Lazy", "t"); _ }, [a]) ->
+      [%expr [%e serde_path ~loc "lazy_"] [%e serde_of_core_type a]]
   | Ptyp_constr ({ txt = Lident name; _ }, []) ->
       B.evar ~loc (serde_name name)
   | Ptyp_tuple [a; b] ->

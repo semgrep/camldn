@@ -158,3 +158,11 @@ let ref (type a) (inner : a t) : a Stdlib.ref t = {
     | Some (0, [c]) -> Stdlib.ref (inner.load c)
     | _ -> raise (Missing_content sha));
 }
+
+let lazy_ (type a) (inner : a t) : a Lazy.t t = {
+  store = (fun lz -> Merkle.store ~tag:0 [inner.store (Lazy.force lz)]);
+  load  = (fun sha ->
+    match Merkle.load sha with
+    | Some (0, [c]) -> Lazy.from_val (inner.load c)
+    | _ -> raise (Missing_content sha));
+}
