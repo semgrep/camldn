@@ -207,6 +207,23 @@ let test_serde_result =
        | Error "nope" -> ()
        | _ -> Testo.fail "expected Error nope")))
 
+let test_serde_ref =
+  Testo.create "serde.ref_round_trip_no_aliasing" (fun () ->
+    with_in_memory (fun _ ->
+      let serde = SerDe.ref SerDe.int in
+      let r = ref 7 in
+      let sha = serde.store r in
+      let r' = serde.load sha in
+      if !r' <> 7 then Testo.fail "expected !r' = 7";
+      (* Mutate the original — loaded ref must not observe the change. *)
+      r := 999;
+      if !r' <> 7 then
+        Testo.fail "aliasing leaked: loaded ref saw mutation of source";
+      (* Mutate the loaded ref — source must not observe it. *)
+      r' := 123;
+      if !r <> 999 then
+        Testo.fail "aliasing leaked: source saw mutation of loaded ref"))
+
 let test_serde_pair =
   Testo.create "serde.pair_round_trip" (fun () ->
     with_in_memory (fun _ ->
@@ -334,6 +351,7 @@ let tests =
   ; test_serde_list
   ; test_serde_option
   ; test_serde_result
+  ; test_serde_ref
   ; test_serde_pair
   ; test_cache_round_trip
   ; test_memo_hit_miss

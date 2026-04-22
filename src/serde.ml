@@ -150,3 +150,11 @@ let quad a b c d = {
         (a.load cw, b.load cx, c.load cy, d.load cz)
     | _ -> raise (Missing_content sha));
 }
+
+let ref (type a) (inner : a t) : a Stdlib.ref t = {
+  store = (fun r -> Merkle.store ~tag:0 [inner.store !r]);
+  load  = (fun sha ->
+    match Merkle.load sha with
+    | Some (0, [c]) -> Stdlib.ref (inner.load c)
+    | _ -> raise (Missing_content sha));
+}

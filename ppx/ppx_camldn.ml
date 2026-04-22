@@ -33,6 +33,8 @@ let rec serde_of_core_type ct =
       [%expr [%e serde_path ~loc "result"]
                [%e serde_of_core_type a]
                [%e serde_of_core_type b]]
+  | Ptyp_constr ({ txt = Lident "ref"; _ }, [a]) ->
+      [%expr [%e serde_path ~loc "ref"] [%e serde_of_core_type a]]
   | Ptyp_constr ({ txt = Lident name; _ }, []) ->
       B.evar ~loc (serde_name name)
   | Ptyp_tuple [a; b] ->

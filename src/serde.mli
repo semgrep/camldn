@@ -32,6 +32,12 @@ val pair   : 'a t -> 'b t -> ('a * 'b) t
 val triple : 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 val quad   : 'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
 
+val ref : 'a t -> 'a ref t
+(** Serialize an ['a ref] as its contents wrapped in a merkle blob. {b Aliasing
+    is not preserved}: if two refs in the source data point at the same cell,
+    [load] returns two independent fresh refs. Later mutation through one will
+    not be visible through the other. *)
+
 (** {1 Escape hatch and merkle primitives} *)
 
 val of_bin_prot : 'a Bin_prot.Type_class.t -> 'a t

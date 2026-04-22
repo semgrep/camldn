@@ -202,6 +202,21 @@ let test_memo_attr_style =
 type inner = { inner_name : string; inner_n : int } [@@deriving camldn]
 type outer = { first : inner; second : inner } [@@deriving camldn]
 
+type counter = { label : string; count : int ref } [@@deriving camldn]
+
+let test_ppx_ref_field =
+  Testo.create "ppx.record_with_ref_field" (fun () ->
+    with_in_memory (fun () ->
+      let c = { label = "hits"; count = ref 41 } in
+      let sha = serde_counter.store c in
+      let c' = serde_counter.load sha in
+      if c'.label <> "hits" then Testo.fail "label lost";
+      if !(c'.count) <> 41 then Testo.fail "count lost";
+      (* Aliasing not preserved: mutating source doesn't affect the loaded copy. *)
+      c.count := 999;
+      if !(c'.count) <> 41 then
+        Testo.fail "aliasing leaked via deriving"))
+
 let test_ppx_record_structural_sharing =
   Testo.create "ppx.record_shared_subtree_dedup" (fun () ->
     with_temp_file_db (fun path uri ->
@@ -234,6 +249,7 @@ let tests =
   ; test_memo_partial_key
   ; test_memo_attr_style
   ; test_ppx_record_structural_sharing
+  ; test_ppx_ref_field
   ]
 
 let () = Testo.interpret_argv ~project_name:"ppx_camldn" (fun _env -> tests)
